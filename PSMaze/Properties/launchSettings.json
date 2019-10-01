@@ -1,0 +1,9 @@
+{
+  "profiles": {
+    "PSMaze": {
+      "commandName": "Executable",
+      "executablePath": "C:\\Program Files\\PowerShell\\6\\pwsh.exe",
+      "commandLineArgs": "-NoLogo -NoExit -Command \"Import-Module '.\\PSMaze.dll'; Get-PSProvider;\""
+    }
+  }
+}
