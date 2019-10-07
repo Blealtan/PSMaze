@@ -4,6 +4,9 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Management.Automation;
 using System.Management.Automation.Provider;
+using System.Security.Cryptography;
+
+#nullable enable
 
 namespace PSMaze
 {
@@ -18,19 +21,28 @@ namespace PSMaze
     }
 
     [Serializable]
-    public class AdjMazeCell
+    public class MazeCell
     {
         public int X { get; }
         public int Y { get; }
-        public Direction Direction { get; }
-        internal AdjMazeCell(int x, int y, Direction dir) { X = x; Y = y; Direction = dir; }
+        public string? Flag { get; }
+        internal MazeCell(int x, int y, string? flag) { X = x; Y = y; Flag = flag; }
 
         internal PSObject ToPSObject()
         {
             var pso = new PSObject(this);
             pso.Members.Add(
                 new PSMemberSet("PSStandardMembers", new[]
-                { new PSPropertySet("DefaultDisplayPropertySet", new[] { "X", "Y", "Direction" }) }));
+                { new PSPropertySet("DefaultDisplayPropertySet", new[] { "X", "Y", "Flag" }) }));
+            return pso;
+        }
+        internal PSObject ToPSObjectWithDirection(Direction dir)
+        {
+            var pso = new PSObject(this);
+            pso.Properties.Add(new PSNoteProperty("Direction", dir));
+            pso.Members.Add(
+                new PSMemberSet("PSStandardMembers", new[]
+                { new PSPropertySet("DefaultDisplayPropertySet", new[] { "Direction", "X", "Y", "Flag" }) }));
             return pso;
         }
     }
@@ -46,12 +58,12 @@ namespace PSMaze
         private static int MazeCol => _Maze.GetLength(0);
         static MazeProvider()
         {
-            _Maze = new Direction[128, 64];
+            _Maze = new Direction[32, 32];
             for (int y = 0; y < MazeCol; ++y)
                 for (int x = 0; x < MazeRow; ++x)
                     GetMazeAt((x, y)) = Direction.None;
 
-            Random random = new Random("token".GetHashCode()); // TODO: Change this to actual token
+            Random random = new Random(0x1551);
 
             // Construct a disjoint set
             var disj = new ((int x, int y) parent, int rank)[MazeCol, MazeRow];
@@ -124,11 +136,12 @@ namespace PSMaze
 
         protected override bool IsValidPath(string path)
         {
-            return path.Split('\\').Select(sd => sd.ToLower() switch
-            {
-                var x when x == "up" || x == "down" || x == "left" || x == "right" => true,
-                _ => false
-            }).Aggregate((b1, b2) => b1 && b2);
+            //return path.Split('\\').Select(sd => sd.ToLower() switch
+            //{
+            //    var x when x == "up" || x == "down" || x == "left" || x == "right" || x == "" => true,
+            //    _ => false
+            //}).Aggregate((b1, b2) => b1 && b2);
+            return true;
         }
 
         protected override Collection<PSDriveInfo> InitializeDefaultDrives()
@@ -171,6 +184,34 @@ namespace PSMaze
             }
         }
 
+        private MazeCell? GetCellRepr(string path)
+        {
+            if (GetCoordinate(path) is (int x, int y))
+            {
+                int? flag = null;
+                if ((x, y) == (MazeRow - 1, MazeCol - 1))
+                {
+                    using var sha256 = SHA256.Create();
+                    var hash = sha256.ComputeHash(path.Split('\\').SelectMany(sd => sd.ToLower() switch
+                    {
+                        "up" => Enumerable.Repeat((byte)0, 1),
+                        "down" => Enumerable.Repeat((byte)1, 1),
+                        "left" => Enumerable.Repeat((byte)2, 1),
+                        "right" => Enumerable.Repeat((byte)3, 1),
+                        "" => Enumerable.Empty<byte>(),
+                        _ => throw new InvalidOperationException()
+                    }).ToArray());
+                    int nnflag = 0;
+                    for (int i = 0; i < hash.Length; ++i)
+                        nnflag ^= hash[i] << (8 * (i % 4));
+                    flag = nnflag;
+                }
+                return new MazeCell(x, y, flag?.ToString("X8"));
+            }
+            else
+                return null;
+        }
+
         protected override bool ItemExists(string path)
         {
             return GetCoordinate(path) != null;
@@ -188,19 +229,30 @@ namespace PSMaze
 
             var coord = GetCoordinate(path) ?? throw new InvalidOperationException("Path not exist.");
             if (GetMazeAt(coord).HasFlag(Direction.Up))
-                WriteItemObject(new AdjMazeCell(coord.x, coord.y - 1, Direction.Up).ToPSObject(), $"{path}\\Up", true);
+            {
+                var npath = $"{path}\\Up";
+                WriteItemObject(GetCellRepr(npath)?.ToPSObjectWithDirection(Direction.Up), npath, true);
+            }
             if (GetMazeAt(coord).HasFlag(Direction.Down))
-                WriteItemObject(new AdjMazeCell(coord.x, coord.y + 1, Direction.Down).ToPSObject(), $"{path}\\Down", true);
+            {
+                var npath = $"{path}\\Down";
+                WriteItemObject(GetCellRepr(npath)?.ToPSObjectWithDirection(Direction.Down), npath, true);
+            }
             if (GetMazeAt(coord).HasFlag(Direction.Left))
-                WriteItemObject(new AdjMazeCell(coord.x - 1, coord.y, Direction.Left).ToPSObject(), $"{path}\\Left", true);
+            {
+                var npath = $"{path}\\Left";
+                WriteItemObject(GetCellRepr(npath)?.ToPSObjectWithDirection(Direction.Left), npath, true);
+            }
             if (GetMazeAt(coord).HasFlag(Direction.Right))
-                WriteItemObject(new AdjMazeCell(coord.x + 1, coord.y, Direction.Right).ToPSObject(), $"{path}\\Right", true);
+            {
+                var npath = $"{path}\\Right";
+                WriteItemObject(GetCellRepr(npath)?.ToPSObjectWithDirection(Direction.Right), npath, true);
+            }
         }
 
         protected override void GetItem(string path)
         {
-            var coord = GetCoordinate(path) ?? throw new InvalidOperationException("Path not exist.");
-            WriteItemObject(new AdjMazeCell(coord.x, coord.y, Direction.None).ToPSObject(), $"{path}", true);
+            WriteItemObject((GetCellRepr(path) ?? throw new InvalidOperationException("Path not exist.")).ToPSObject(), "\\" + path, true);
         }
     }
 }
