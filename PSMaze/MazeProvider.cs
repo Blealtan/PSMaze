@@ -58,7 +58,7 @@ namespace PSMaze
         private static int MazeCol => _Maze.GetLength(0);
         static MazeProvider()
         {
-            _Maze = new Direction[32, 32];
+            _Maze = new Direction[64, 64];
             for (int y = 0; y < MazeCol; ++y)
                 for (int x = 0; x < MazeRow; ++x)
                     GetMazeAt((x, y)) = Direction.None;
@@ -136,11 +136,6 @@ namespace PSMaze
 
         protected override bool IsValidPath(string path)
         {
-            //return path.Split('\\').Select(sd => sd.ToLower() switch
-            //{
-            //    var x when x == "up" || x == "down" || x == "left" || x == "right" || x == "" => true,
-            //    _ => false
-            //}).Aggregate((b1, b2) => b1 && b2);
             return true;
         }
 
@@ -200,13 +195,20 @@ namespace PSMaze
                         "right" => Enumerable.Repeat((byte)3, 1),
                         "" => Enumerable.Empty<byte>(),
                         _ => throw new InvalidOperationException()
+                    }).Aggregate(new List<byte>(), (list, b) =>
+                    {
+                        if (list.Count > 0 && (list.Last() ^ b) == 1)
+                            list.RemoveAt(list.Count - 1);
+                        else
+                            list.Add(b);
+                        return list;
                     }).ToArray());
                     int nnflag = 0;
                     for (int i = 0; i < hash.Length; ++i)
                         nnflag ^= hash[i] << (8 * (i % 4));
                     flag = nnflag;
                 }
-                return new MazeCell(x, y, flag?.ToString("X8"));
+                return new MazeCell(x, y, flag is int f ? $"flag{{D0_y0u_1ik3_PSC0r3_n0w_{f.ToString("X8")}}}" : null);
             }
             else
                 return null;
